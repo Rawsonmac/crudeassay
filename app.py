@@ -1,4 +1,3 @@
-```python
 import pandas as pd
 import logging
 
@@ -62,4 +61,3 @@ def run_optimization(assay_df, price_df, region, freight_cost, base_cost=50):
         }
     except Exception as e:
         raise ValueError(f"Optimization failed: {str(e)}")
-```
