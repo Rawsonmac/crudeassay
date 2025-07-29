@@ -1,13 +1,5 @@
-raw_prices = load_benchmark_prices()
-editable = st.sidebar.data_editor(raw_prices[["Product", region]], key="price_editor")
-
-# Inject back the edited column into full price_df
-price_df = raw_prices.copy()
-price_df[region] = editable[region]
-
-
+Product,Region_USGC,Region_EU,Region_Asia
 Gasoline,85,90,88
 Jet/Kero,88,92,91
 Diesel,90,95,93
 Fuel Oil,70,72,74
-
