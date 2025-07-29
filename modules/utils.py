@@ -4,8 +4,10 @@ def load_assay_file(uploaded_file, default_file):
     """Load assay data from uploaded file or default file."""
     if uploaded_file is not None:
         df = pd.read_csv(uploaded_file)
-    else:
+    elif default_file is not None:
         df = pd.read_csv(f"data/{default_file}")
+    else:
+        raise ValueError("No assay file provided or found")
     df.columns = df.columns.str.strip()  # Remove whitespace
     required_cols = ["Cut", "Volume"]
     if not all(col in df.columns for col in required_cols):
