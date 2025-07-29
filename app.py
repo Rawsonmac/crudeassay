@@ -3,9 +3,7 @@ import pandas as pd
 import os
 from modules.optimizer import run_optimization
 from modules.logistics import calculate_logistics_cost
-from modules.sensitivity import run_sensitivity_analysis
 from modules.utils import load_assay_file, load_benchmark_prices
-
 import plotly.graph_objects as go
 
 st.set_page_config(page_title="Crude Slate Profit Optimizer", layout="wide")
@@ -39,10 +37,9 @@ result = run_optimization(assay_df, price_df, region, freight_cost)
 # --- Display Output ---
 st.subheader("📊 Optimized Product Slate")
 st.dataframe(result["slate"], use_container_width=True)
-
 st.metric("💰 Net Profit per Barrel", f"${result['profit_per_bbl']:.2f}")
 
-# --- Sensitivity Analysis (Sorted + Colored) ---
+# --- Sensitivity Analysis ---
 st.subheader("📈 Sensitivity Analysis (±10% Price Shocks)")
 deltas = [-0.1, 0.1]
 products = price_df["Product"].tolist()
@@ -80,3 +77,24 @@ fig.update_layout(
 )
 
 st.plotly_chart(fig, use_container_width=True)
+
+# --- 📘 Explanation / Recommendation Text Box ---
+st.subheader("🧠 Optimization Summary & Recommendation")
+
+slate_df = result["slate"]
+top_product = slate_df.sort_values("Profit ($)", ascending=False).iloc[0]
+top_name = top_product["Allocated Product"]
+top_profit = top_product["Profit ($)"]
+diesel_yield = slate_df[slate_df["Allocated Product"] == "Diesel"]["Volume"].values[0]
+resid_yield = slate_df[slate_df["Allocated Product"] == "Fuel Oil"]["Volume"].values[0]
+
+explanation = f"""
+- ✅ The most profitable product is **{top_name}**, generating **${top_profit:.2f}** per barrel of crude.
+- 🔍 **Diesel** makes up **{diesel_yield * 100:.1f}%** of this crude, and it's priced favorably in **{region}**, making it your top driver.
+- ⚠️ Resid (Fuel Oil) yield is **{resid_yield * 100:.1f}%** — consider blending or exporting if margins are weak.
+- 📦 Based on prices and logistics, this crude generates **${result['profit_per_bbl']:.2f} per barrel** overall in {region}.
+
+👉 You should direct processing/blending toward **{top_name}**, and seek regional arbitrage for any surplus diesel or jet fuel.
+"""
+
+st.text_area("📋 Optimization Reasoning", explanation, height=280)
