@@ -1,4 +1,6 @@
-Product,Region_USGC,Region_EU,Region_Asia
+columns = ["Product", "Region_USGC", "Region_EU", "Region_Asia"]
+price_df = st.sidebar.data_editor(price_df[columns], key="price_editor")
+
 Gasoline,85,90,88
 Jet/Kero,88,92,91
 Diesel,90,95,93
