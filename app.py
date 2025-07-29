@@ -9,10 +9,13 @@ try:
 except ImportError as e:
     st.error(f"Failed to import modules: {str(e)}")
     st.stop()
+except SyntaxError as e:
+    st.error(f"Syntax error in module import: {str(e)}")
+    st.stop()
 
 # Set page config
-st.set_page_config(page_title="Crude Slate Profit Optimizer", layout="wide", page_icon="🛢")
-st.title("🛢 Crude Slate Profit Optimizer")
+st.set_page_config(page_title="SlateMax", layout="wide", page_icon="🛢")
+st.title("🛢 SlateMax")
 
 # Get assay files
 data_dir = os.getenv("DATA_DIR", "data")
@@ -20,7 +23,7 @@ try:
     if not os.path.exists(data_dir):
         st.error(f"Data directory not found: {data_dir}")
         st.stop()
-    assay_files = sorted([f for f in os.listdir(data_dir) if f.endswith(".csv") and f != "benchmark_prices.csv"])
+    assay_files = sorted([f for f in os.listdir(data_dir) if f.endswith(".csv.gz") and f != "benchmark_prices.csv.gz"])
     if not assay_files:
         st.error("No assay files found in data directory")
         st.stop()
@@ -36,7 +39,7 @@ st.sidebar.download_button(
     file_name="sample_assay.csv",
     mime="text/csv"
 )
-uploaded_file = st.sidebar.file_uploader("Upload your assay (CSV)", type="csv")
+uploaded_file = st.sidebar.file_uploader("Upload your assay (CSV or CSV.GZ)", type=["csv", "gz"])
 default_file = st.sidebar.selectbox("...or select a preset", assay_files)
 try:
     assay_df = load_assay_file(uploaded_file, default_file)
