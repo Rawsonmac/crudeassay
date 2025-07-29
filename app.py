@@ -18,7 +18,12 @@ assay_files = sorted([
     if f.endswith(".csv") and f != "benchmark_prices.csv"
 ])
 default_file = st.sidebar.selectbox("...or select a preset", assay_files)
-assay_df = load_assay_file(uploaded_file, default_file)
+try:
+    assay_df = load_assay_file(uploaded_file, default_file)
+    st.sidebar.write("assay_df columns:", assay_df.columns.tolist())
+except ValueError as e:
+    st.sidebar.error(f"❌ Failed to load assay data: {e}")
+    assay_df = pd.DataFrame()
 
 # --- Sidebar: Region and Logistics ---
 st.sidebar.header("Logistics Settings")
@@ -28,14 +33,27 @@ freight_cost = calculate_logistics_cost(region) if include_logistics else 0
 
 # --- Sidebar: Pricing Input (keep all columns!) ---
 st.sidebar.header("Benchmark Prices")
-price_df = load_benchmark_prices()
-price_df = st.sidebar.data_editor(price_df, key="price_editor")
+try:
+    price_df = load_benchmark_prices()
+    st.sidebar.write("Raw price_df columns:", price_df.columns.tolist())
+except ValueError as e:
+    st.sidebar.error(f"❌ Failed to load benchmark prices: {e}")
+    price_df = pd.DataFrame()
+price_df = st.sidebar.data_editor(
+    price_df,
+    key="price_editor",
+    disabled=["Product", "Region_USGC", "Region_EU", "Region_Asia"]
+)
+st.sidebar.write("Edited price_df columns:", price_df.columns.tolist())
 
 # --- Run Optimization Automatically ---
 try:
-    # Validate price_df columns
+    st.write("Selected region:", region)
+    if price_df is None or price_df.empty:
+        st.error("Error: price_df is empty or not loaded.")
+        st.stop()
     if not all(col in price_df.columns for col in ["Product", region]):
-        st.error(f"Error: price_df missing required columns: Product, {region}")
+        st.error(f"Error: price_df missing required columns. Expected: Product, {region}. Found: {price_df.columns.tolist()}")
         st.stop()
     result = run_optimization(assay_df, price_df, region, freight_cost)
 
