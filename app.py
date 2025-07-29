@@ -30,10 +30,13 @@ freight_cost = calculate_logistics_cost(region) if include_logistics else 0
 st.sidebar.header("Benchmark Prices")
 price_df = load_benchmark_prices()
 price_df = st.sidebar.data_editor(price_df, key="price_editor")
-)
 
 # --- Run Optimization Automatically ---
 try:
+    # Validate price_df columns
+    if not all(col in price_df.columns for col in ["Product", region]):
+        st.error(f"Error: price_df missing required columns: Product, {region}")
+        st.stop()
     result = run_optimization(assay_df, price_df, region, freight_cost)
 
     # --- Main Output ---
