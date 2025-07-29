@@ -21,10 +21,17 @@ def run_optimization(assay_df, price_df, region, freight_cost, base_cost=50):
     # Validate inputs
     required_assay_cols = ["Cut", "Volume"]
     required_price_cols = ["Product", region]
+    
+    # Debug: Log input details
+    logging.info(f"price_df columns: {price_df.columns.tolist()}")
+    logging.info(f"Required price columns: {required_price_cols}")
+    logging.info(f"assay_df columns: {assay_df.columns.tolist()}")
+    
     if not all(col in assay_df.columns for col in required_assay_cols):
-        raise ValueError("assay_df missing required columns: Cut, Volume")
+        raise ValueError(f"assay_df missing required columns: {required_assay_cols}")
     if not all(col in price_df.columns for col in required_price_cols):
-        raise ValueError(f"price_df missing required columns: Product, {region}")
+        missing_cols = [col for col in required_price_cols if col not in price_df.columns]
+        raise ValueError(f"price_df missing required columns: {missing_cols}. Found: {price_df.columns.tolist()}")
     if not pd.api.types.is_numeric_dtype(assay_df["Volume"]):
         raise ValueError("Volume column must be numeric")
     if assay_df.empty or price_df.empty:
