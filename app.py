@@ -16,10 +16,9 @@ uploaded_file = st.sidebar.file_uploader("Upload your assay (CSV)", type="csv")
 assay_files = sorted([
     f for f in os.listdir("data")
     if f.endswith(".csv") and f != "benchmark_prices.csv"
-])
-default_file = st.sidebar.selectbox("...or select a preset", assay_files)
+], key=lambda x: x.lower())  # Sort case-insensitively
 try:
-    assay_df = load_assay_file(uploaded_file, default_file)
+    assay_df = load_assay_file(uploaded_file, default_file=None if not assay_files else assay_files[0])
     st.sidebar.write("assay_df columns:", assay_df.columns.tolist())
 except ValueError as e:
     st.sidebar.error(f"❌ Failed to load assay data: {e}")
@@ -31,7 +30,7 @@ region = st.sidebar.selectbox("Target Market", ["Region_USGC", "Region_EU", "Reg
 include_logistics = st.sidebar.checkbox("Include Freight & Demurrage", value=True)
 freight_cost = calculate_logistics_cost(region) if include_logistics else 0
 
-# --- Sidebar: Pricing Input (keep all columns!) ---
+# --- Sidebar: Pricing Input ---
 st.sidebar.header("Benchmark Prices")
 try:
     price_df = load_benchmark_prices()
@@ -46,7 +45,7 @@ price_df = st.sidebar.data_editor(
 )
 st.sidebar.write("Edited price_df columns:", price_df.columns.tolist())
 
-# --- Run Optimization Automatically ---
+# --- Run Optimization ---
 try:
     st.write("Selected region:", region)
     if price_df is None or price_df.empty:
@@ -103,7 +102,6 @@ try:
 
     # --- Optimization Summary & Reasoning ---
     st.subheader("🧠 Optimization Summary & Recommendation")
-
     slate_df = result["slate"]
     top_product = slate_df.sort_values("Profit ($)", ascending=False).iloc[0]
     top_name = top_product["Allocated Product"]
@@ -116,10 +114,8 @@ try:
     - 🔍 **Diesel** makes up **{diesel_yield * 100:.1f}%** of this crude, and it's priced favorably in **{region}**, making it your top driver.
     - ⚠️ Resid (Fuel Oil) yield is **{resid_yield * 100:.1f}%** — consider blending or exporting if margins are weak.
     - 📦 Based on prices and logistics, this crude generates **${result['profit_per_bbl']:.2f} per barrel** overall in {region}.
-
     👉 You should direct processing/blending toward **{top_name}**, and seek regional arbitrage for any surplus diesel or jet fuel.
     """
-
     st.text_area("📋 Optimization Reasoning", explanation.strip(), height=280)
 
 except ValueError as e:
