@@ -1,63 +1,49 @@
+import streamlit as st
 import pandas as pd
-import logging
+import os
+from modules.optimizer import run_optimization
+from modules.logistics import calculate_logistics_cost
+from modules.sensitivity import run_sensitivity_analysis
+from modules.utils import load_assay_file, load_benchmark_prices
 
-def map_cut_to_product(cut):
-    """Map a crude cut to a refined product."""
-    CUT_TO_PRODUCT = {
-        "naphtha": "Gasoline",
-        "kero": "Jet/Kero",
-        "kerosene": "Jet/Kero",
-        "diesel": "Diesel",
-        "resid": "Fuel Oil"
-    }
-    if not isinstance(cut, str):
-        logging.warning(f"Invalid cut: {cut}, defaulting to Fuel Oil")
-        return "Fuel Oil"
-    cut = cut.lower()
-    return CUT_TO_PRODUCT.get(cut, "Fuel Oil")
+st.set_page_config(page_title="Crude Slate Profit Optimizer", layout="wide")
+st.title("🛢 Crude Slate Profit Optimizer")
 
-def run_optimization(assay_df, price_df, region, freight_cost, base_cost=50):
-    """Optimize crude slate and calculate profit."""
-    # Validate inputs
-    required_assay_cols = ["Cut", "Volume"]
-    required_price_cols = ["Product", region]
-    if not all(col in assay_df.columns for col in required_assay_cols):
-        raise ValueError("assay_df missing required columns: Cut, Volume")
-    if not all(col in price_df.columns for col in required_price_cols):
-        raise ValueError(f"price_df missing required columns: Product, {region}")
-    if not pd.api.types.is_numeric_dtype(assay_df["Volume"]):
-        raise ValueError("Volume column must be numeric")
-    if assay_df.empty or price_df.empty:
-        raise ValueError("Empty DataFrame provided")
+# Confirm app loaded
+st.write("App loaded ✅")
 
-    try:
-        # Calculate total barrels
-        total_bbl = assay_df["Volume"].sum()
-        if total_bbl == 0:
-            raise ValueError("Total volume is zero")
+# Get all assay files from data folder
+assay_files = sorted([
+    f for f in os.listdir("data") 
+    if f.endswith(".csv") and f != "benchmark_prices.csv"
+])
 
-        # Map cuts to products
-        assay_df["Allocated Product"] = assay_df["Cut"].apply(map_cut_to_product)
+# Crude assay selection
+st.sidebar.header("Crude Assay")
+uploaded_file = st.sidebar.file_uploader("Upload your assay (CSV)", type="csv")
+default_file = st.sidebar.selectbox("...or select a preset", assay_files)
+assay_df = load_assay_file(uploaded_file, default_file)
 
-        # Merge with price_df
-        slate = assay_df.merge(price_df[["Product", region]], left_on="Allocated Product", right_on="Product", how="left")
-        slate[region] = slate[region].fillna(0)  # Handle missing prices
-        slate["Product Price ($/bbl)"] = slate[region]
-        slate["Profit ($)"] = (slate[region] - (base_cost + freight_cost)) * slate["Volume"]
+# Pricing Input
+st.sidebar.header("Benchmark Prices (editable)")
+price_df = load_benchmark_prices()
+edited_prices = st.sidebar.data_editor(price_df[["Product", "Region_USGC"]])
 
-        # Log unmatched products
-        unmatched = slate[slate[region] == 0]["Allocated Product"].unique()
-        if unmatched.size > 0:
-            logging.warning(f"No prices found for products: {', '.join(unmatched)}")
+# Logistics
+st.sidebar.header("Logistics")
+region = st.sidebar.selectbox("Target Market", ["Region_USGC", "Region_EU", "Region_Asia"])
+include_logistics = st.sidebar.checkbox("Include Freight & Demurrage", value=True)
 
-        # Prepare output DataFrame
-        slate = slate[["Cut", "Allocated Product", "Volume", "Product Price ($/bbl)", "Profit ($)"]]
-        total_profit = slate["Profit ($)"].sum()
-        profit_per_bbl = total_profit / total_bbl
+# Run optimization
+if st.sidebar.button("Run Optimization"):
+    freight_cost = calculate_logistics_cost(region) if include_logistics else 0
+    result = run_optimization(assay_df, price_df, region, freight_cost)
 
-        return {
-            "slate": slate,
-            "profit_per_bbl": profit_per_bbl
-        }
-    except Exception as e:
-        raise ValueError(f"Optimization failed: {str(e)}")
+    st.subheader("Optimized Product Slate")
+    st.dataframe(result["slate"])
+
+    st.metric("Net Profit per Barrel", f"${result['profit_per_bbl']:.2f}")
+
+    st.subheader("Sensitivity Analysis")
+    fig = run_sensitivity_analysis(assay_df, price_df, region, freight_cost)
+    st.plotly_chart(fig, use_container_width=True)
