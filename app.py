@@ -1,90 +1,65 @@
-import streamlit as st
+```python
 import pandas as pd
-import os
-try:
-    from modules.optimizer import run_optimization
-    from modules.logistics import calculate_logistics_cost
-    from modules.sensitivity import run_sensitivity_analysis
-    from modules.utils import load_assay_file, load_benchmark_prices
-except ImportError as e:
-    st.error(f"Failed to import modules: {str(e)}")
-    st.stop()
-except SyntaxError as e:
-    st.error(f"Syntax error in module import: {str(e)}")
-    st.stop()
+import logging
 
-# Set page config
-st.set_page_config(page_title="SlateMax", layout="wide", page_icon="🛢")
-st.title("🛢 SlateMax")
+def map_cut_to_product(cut):
+    """Map a crude cut to a refined product."""
+    CUT_TO_PRODUCT = {
+        "naphtha": "Gasoline",
+        "kero": "Jet/Kero",
+        "kerosene": "Jet/Kero",
+        "diesel": "Diesel",
+        "resid": "Fuel Oil"
+    }
+    if not isinstance(cut, str):
+        logging.warning(f"Invalid cut: {cut}, defaulting to Fuel Oil")
+        return "Fuel Oil"
+    cut = cut.lower()
+    return CUT_TO_PRODUCT.get(cut, "Fuel Oil")
 
-# Get assay files
-data_dir = os.getenv("DATA_DIR", "data")
-try:
-    if not os.path.exists(data_dir):
-        st.error(f"Data directory not found: {data_dir}")
-        st.stop()
-    assay_files = sorted([f for f in os.listdir(data_dir) if f.endswith(".csv.gz") and f != "benchmark_prices.csv.gz"])
-    if not assay_files:
-        st.error("No assay files found in data directory")
-        st.stop()
-except Exception as e:
-    st.error(f"Error accessing data directory: {str(e)}")
-    st.stop()
+def run_optimization(assay_df, price_df, region, freight_cost, base_cost=50):
+    """Optimize crude slate and calculate profit."""
+    # Validate inputs
+    required_assay_cols = ["Cut", "Volume"]
+    required_price_cols = ["Product", region]
+    if not all(col in assay_df.columns for col in required_assay_cols):
+        raise ValueError("assay_df missing required columns: Cut, Volume")
+    if not all(col in price_df.columns for col in required_price_cols):
+        raise ValueError(f"price_df missing required columns: Product, {region}")
+    if not pd.api.types.is_numeric_dtype(assay_df["Volume"]):
+        raise ValueError("Volume column must be numeric")
+    if assay_df.empty or price_df.empty:
+        raise ValueError("Empty DataFrame provided")
 
-# Assay Selection
-st.sidebar.header("Crude Assay")
-st.sidebar.download_button(
-    label="Download sample assay CSV",
-    data=pd.DataFrame({"Cut": ["Naphtha", "Kero"], "Volume": [1000, 2000]}).to_csv(index=False),
-    file_name="sample_assay.csv",
-    mime="text/csv"
-)
-uploaded_file = st.sidebar.file_uploader("Upload your assay (CSV or CSV.GZ)", type=["csv", "gz"])
-default_file = st.sidebar.selectbox("...or select a preset", assay_files)
-try:
-    assay_df = load_assay_file(uploaded_file, default_file)
-    st.sidebar.success(f"Loaded assay: {'Uploaded file' if uploaded_file else default_file}")
-except Exception as e:
-    st.sidebar.error(f"Error loading assay: {str(e)}")
-    st.stop()
-
-# Pricing Input
-st.sidebar.header("Benchmark Prices")
-try:
-    price_df = load_benchmark_prices()
-    region = st.sidebar.selectbox("Target Market", ["Region_USGC", "Region_EU", "Region_Asia"])
-    if region not in price_df.columns:
-        st.error(f"Region {region} not found in benchmark prices")
-        st.stop()
-    edited_prices = st.sidebar.data_editor(price_df[["Product", region]], num_rows="dynamic")
-    if (edited_prices[region] < 0).any():
-        st.error("Prices cannot be negative")
-        st.stop()
-    price_df[region] = edited_prices[region]
-except Exception as e:
-    st.sidebar.error(f"Error loading prices: {str(e)}")
-    st.stop()
-
-# Logistics Settings
-st.sidebar.header("Logistics Settings")
-include_logistics = st.sidebar.checkbox("Include Freight & Demurrage", value=True)
-
-# Run Optimization
-if st.sidebar.button("Run Optimization"):
     try:
-        with st.spinner("Running optimization..."):
-            freight_cost = calculate_logistics_cost(region) if include_logistics else 0
-            result = run_optimization(assay_df, price_df, region, freight_cost)
-            if not isinstance(result, dict) or "slate" not in result or "profit_per_bbl" not in result:
-                st.error("Invalid optimization result")
-                st.stop()
-            
-            st.subheader("Optimized Product Slate")
-            st.dataframe(result["slate"])
-            st.metric("Net Profit per Barrel", f"${result['profit_per_bbl']:.2f}")
+        # Calculate total barrels
+        total_bbl = assay_df["Volume"].sum()
+        if total_bbl == 0:
+            raise ValueError("Total volume is zero")
 
-            st.subheader("Sensitivity Analysis")
-            tornado = run_sensitivity_analysis(assay_df, price_df, region, freight_cost)
-            st.plotly_chart(tornado, use_container_width=True)
+        # Map cuts to products
+        assay_df["Allocated Product"] = assay_df["Cut"].apply(map_cut_to_product)
+
+        # Merge with price_df
+        slate = assay_df.merge(price_df[["Product", region]], left_on="Allocated Product", right_on="Product", how="left")
+        slate[region] = slate[region].fillna(0)  # Handle missing prices
+        slate["Product Price ($/bbl)"] = slate[region]
+        slate["Profit ($)"] = (slate[region] - (base_cost + freight_cost)) * slate["Volume"]
+
+        # Log unmatched products
+        unmatched = slate[slate[region] == 0]["Allocated Product"].unique()
+        if unmatched.size > 0:
+            logging.warning(f"No prices found for products: {', '.join(unmatched)}")
+
+        # Prepare output DataFrame
+        slate = slate[["Cut", "Allocated Product", "Volume", "Product Price ($/bbl)", "Profit ($)"]]
+        total_profit = slate["Profit ($)"].sum()
+        profit_per_bbl = total_profit / total_bbl
+
+        return {
+            "slate": slate,
+            "profit_per_bbl": profit_per_bbl
+        }
     except Exception as e:
-        st.error(f"Optimization failed: {str(e)}")
+        raise ValueError(f"Optimization failed: {str(e)}")
+```
